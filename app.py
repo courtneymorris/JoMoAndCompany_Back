@@ -28,7 +28,7 @@ class Product(db.Model):
 
 class Image(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    image_url = db.Column(db.String)
+    image_url = db.Column(db.String, nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False)
 
     def __init__(self, image_url, product_id):
@@ -80,12 +80,36 @@ def get_products():
     all_products = db.session.query(Product).all()
     return jsonify(multi_product_schema.dump(all_products))
 
-@app.route("/product/get/category/<category>", methods=["GET"])
+@app.route("/product/get/<category>", methods=["GET"])
 def get_products_by_category(category):
     products = db.session.query(Product).filter(Product.category == category).all()
     return jsonify(multi_product_schema.dump(products))
 
+@app.route("/product/get/collection/<collection>", methods=["GET"])
+def get_products_by_collection(collection):
+    collections = collection.split("-")
+    products = db.session.query(Product).filter(Product.collection == collections).all()
+    return jsonify(multi_product_schema.dump(products))
 
+
+@app.route("/image/add", methods=["POST"])
+def add_images():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as JSON")
+
+    data = request.get_json()
+    image_url = data.get("image_url")
+    product_id = data.get("product_id")
+
+    existing_main_image_check = db.session.query(Image).filter(Image.image_url == image_url).first()
+    if existing_main_image_check is not None:
+        return jsonify("Error: Duplicate image. Please check url.")
+
+    new_image = Image(image_url, product_id)
+    db.session.add(new_image)
+    db.session.commit()
+
+    return jsonify(image_schema.dump(new_image))
 
 
 
