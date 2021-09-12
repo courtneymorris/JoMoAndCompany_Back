@@ -121,6 +121,11 @@ def get_all_images_by_product_id(product_id):
     images = db.session.query(Image).filter(Image.product_id == product_id).all()
     return jsonify(multi_image_schema.dump(images))
 
+@app.route("/image/get/featured/<product_id>", methods=["GET"])
+def get_featured_image_by_product_id(product_id):
+    image = db.session.query(Image).filter(Image.product_id == product_id).first()
+    return jsonify(image_schema.dump(image))
+
 
 
 
