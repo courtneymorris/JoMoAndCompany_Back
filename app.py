@@ -116,8 +116,10 @@ def get_all_images():
     all_images = db.session.query(Image).all()
     return jsonify(multi_image_schema.dump(all_images))
 
-
-
+@app.route("/image/get/all/<product_id>", methods=["GET"])
+def get_all_images_by_product_id(product_id):
+    images = db.session.query(Image).filter(Image.product_id == product_id).all()
+    return jsonify(multi_image_schema.dump(images))
 
 
 
