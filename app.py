@@ -111,6 +111,11 @@ def add_images():
 
     return jsonify(image_schema.dump(new_image))
 
+@app.route("/image/get", methods=["GET"])
+def get_all_images():
+    all_images = db.session.query(Image).all()
+    return jsonify(multi_image_schema.dump(all_images))
+
 
 
 
