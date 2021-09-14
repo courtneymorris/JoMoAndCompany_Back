@@ -13,6 +13,16 @@ bcrypt = Bcrypt(app)
 CORS(app)
 
 
+class Admin(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String, nullable=False, unique=True)
+    password = db.Column(db.String, nullable=False)
+
+    def __init__(self, username, password):
+        self.username = username
+        self.password = password
+
+
 class Customer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String, nullable=False, unique=True)
@@ -52,6 +62,15 @@ class Image(db.Model):
         self.image_url = image_url
         self.product_id = product_id
 
+
+
+class AdminSchema(ma.Schema):
+    class Meta:
+        fields = ("id", "username", "password")
+
+admin_schema = AdminSchema()
+multi_admin_schema = AdminSchema(many=True)
+
 class ImageSchema(ma.Schema):
     class Meta:
         fields = ("id", "image_url", "product_id")
@@ -74,6 +93,93 @@ class CustomerSchema(ma.Schema):
 
 customer_schema = CustomerSchema()
 multi_customer_schema = CustomerSchema(many=True)
+
+
+
+@app.route("/admin/add", methods=["POST"])
+def add_admin():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as json")
+
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
+
+    new_admin = Admin(username, pw_hash)
+    db.session.add(new_admin)
+    db.session.commit()
+
+    return jsonify(admin_schema.dump(new_admin))
+
+@app.route("/admin/verification", methods=["POST"])
+def admin_verification():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as json")
+
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    admin = db.session.query(Admin).filter(Admin.username == username).first()
+
+    if user is None:
+        return jsonify("Account NOT Verified")
+
+    if not bcrypt.check_password_hash(admin.password, password):
+        return jsonify("Account NOT Verified")
+
+    return jsonify(admin_schema.dump(admin))
+
+@app.route("/admin/get", methods=["GET"])
+def get_all_admins():
+    all_admins = db.session.query(Admin).all()
+    return jsonify(multi_admin_schema.dump(all_admins))
+
+
+
+
+@app.route("/customer/add", methods=["POST"])
+def add_customer():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as json")
+
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+
+    pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
+
+    new_customer = Customer(email, pw_hash)
+    db.session.add(new_customer)
+    db.session.commit()
+
+    return jsonify(customer_schema.dump(new_customer))
+
+@app.route("/customer/verification", methods=["POST"])
+def verification():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as json")
+
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+
+    customer = db.session.query(Customer).filter(Customer.email == email).first()
+
+    if user is None:
+        return jsonify("Account NOT Verified")
+
+    if not bcrypt.check_password_hash(customer.password, password):
+        return jsonify("Account NOT Verified")
+
+    return jsonify(customer_schema.dump(customer))
+
+@app.route("/customer/get", methods=["GET"])
+def get_all_customers():
+    all_customers = db.session.query(Customer).all()
+    return jsonify(multi_customer_schema.dump(all_customers))
 
 
 
@@ -149,46 +255,7 @@ def get_all_images_by_product_id(product_id):
 
 
 
-@app.route("/customer/add", methods=["POST"])
-def add_customer():
-    if request.content_type != "application/json":
-        return jsonify("Error: Data must be sent as json")
 
-    data = request.get_json()
-    email = data.get("email")
-    password = data.get("password")
-
-    pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
-
-    new_customer = Customer(email, pw_hash)
-    db.session.add(new_customer)
-    db.session.commit()
-
-    return jsonify(customer_schema.dump(new_customer))
-
-@app.route("/customer/verification", methods=["POST"])
-def verification():
-    if request.content_type != "application/json":
-        return jsonify("Error: Data must be sent as json")
-
-    data = request.get_json()
-    email = data.get("email")
-    password = data.get("password")
-
-    customer = db.session.query(Customer).filter(Customer.email == email).first()
-
-    if user is None:
-        return jsonify("Account NOT Verified")
-
-    if not bcrypt.check_password_hash(customer.password, password):
-        return jsonify("Account NOT Verified")
-
-    return jsonify(customer_schema.dump(customer))
-
-@app.route("/customer/get", methods=["GET"])
-def get_all_customers():
-    all_customers = db.session.query(Customer).all()
-    return jsonify(multi_customer_schema.dump(all_customers))
 
 
 
