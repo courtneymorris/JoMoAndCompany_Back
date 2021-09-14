@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
+from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -8,7 +9,19 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://kxverjehefpkby:04e0afa65b4
 
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
+bcrypt = Bcrypt(app)
 CORS(app)
+
+
+class Customer(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String, nullable=False, unique=True)
+    password = db.Column(db.String, nullable=False)
+    favorites = db.relationship("Product", backref="customer", cascade="all, delete, delete-orphan")
+
+    def __init__(self, email, password):
+        self.email = email
+        self.password = password
 
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -17,18 +30,22 @@ class Product(db.Model):
     name = db.Column(db.String, nullable=False, unique=True)
     description = db.Column(db.Text, nullable=False)
     price = db.Column(db.Integer, nullable=False)
+    featured_image = db.Column(db.String, nullable=False)
+    favorited_by = db.Column(db.Integer, db.ForeignKey("customer.id"))
     images = db.relationship("Image", backref="product", cascade="all, delete, delete-orphan")
 
-    def __init__(self, category, collection, name, description, price):
+    def __init__(self, category, collection, name, description, price, featured_image, favorited_by):
         self.category = category
         self.collection = collection
         self.name = name
         self.description = description
         self.price = price
+        self.featured_image = featured_image
+        self.favorited_by = favorited_by
 
 class Image(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    image_url = db.Column(db.String, nullable=False)
+    image_url = db.Column(db.String)
     product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False)
 
     def __init__(self, image_url, product_id):
@@ -44,11 +61,19 @@ multi_image_schema = ImageSchema(many=True)
 
 class ProductSchema(ma.Schema):
     class Meta:
-        fields = ("id", "category", "collection", "name", "description", "price", "images")
+        fields = ("id", "category", "collection", "name", "description", "price", "featured_image", "images", "favorited_by")
     images = ma.Nested(multi_image_schema)
 
 product_schema = ProductSchema()
 multi_product_schema = ProductSchema(many=True)
+
+class CustomerSchema(ma.Schema):
+    class Meta:
+        fields = ("id", "email", "password")
+    favorites = ma.Nested(multi_product_schema)
+
+customer_schema = CustomerSchema()
+multi_customer_schema = CustomerSchema(many=True)
 
 
 
@@ -64,12 +89,10 @@ def add_product():
     name = data.get("name")
     description = data.get("description")
     price = data.get("price")
+    featured_image = data.get("featured_image")
+    favorited_by = data.get("favorited_by")
 
-    existing_product_check = db.session.query(Product).filter(Product.collection == collection).filter(Product.name == name).first()
-    if existing_product_check is not None:
-        return jsonify("ERROR: Product already exists in database")
-
-    new_product = Product(category, collection, name, description, price)
+    new_product = Product(category, collection, name, description, price, featured_image, favorited_by)
     db.session.add(new_product)
     db.session.commit()
 
@@ -92,6 +115,8 @@ def get_products_by_collection(collection):
     return jsonify(multi_product_schema.dump(products))
 
 
+
+
 @app.route("/image/add", methods=["POST"])
 def add_images():
     if request.content_type != "application/json":
@@ -101,8 +126,8 @@ def add_images():
     image_url = data.get("image_url")
     product_id = data.get("product_id")
 
-    existing_main_image_check = db.session.query(Image).filter(Image.image_url == image_url).first()
-    if existing_main_image_check is not None:
+    existing_image_check = db.session.query(Image).filter(Image.image_url == image_url).first()
+    if existing_image_check is not None:
         return jsonify("Error: Duplicate image. Please check url.")
 
     new_image = Image(image_url, product_id)
@@ -121,12 +146,49 @@ def get_all_images_by_product_id(product_id):
     images = db.session.query(Image).filter(Image.product_id == product_id).all()
     return jsonify(multi_image_schema.dump(images))
 
-@app.route("/image/get/featured/<product_id>", methods=["GET"])
-def get_featured_image_by_product_id(product_id):
-    image = db.session.query(Image).filter(Image.product_id == product_id).first()
-    return jsonify(image_schema.dump(image))
 
 
+
+@app.route("/customer/add", methods=["POST"])
+def add_customer():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as json")
+
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+
+    pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
+
+    new_customer = Customer(email, pw_hash)
+    db.session.add(new_customer)
+    db.session.commit()
+
+    return jsonify(customer_schema.dump(new_customer))
+
+@app.route("/customer/verification", methods=["POST"])
+def verification():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as json")
+
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+
+    customer = db.session.query(Customer).filter(Customer.email == email).first()
+
+    if user is None:
+        return jsonify("Account NOT Verified")
+
+    if not bcrypt.check_password_hash(customer.password, password):
+        return jsonify("Account NOT Verified")
+
+    return jsonify(customer_schema.dump(customer))
+
+@app.route("/customer/get", methods=["GET"])
+def get_all_customers():
+    all_customers = db.session.query(Customer).all()
+    return jsonify(multi_customer_schema.dump(all_customers))
 
 
 
