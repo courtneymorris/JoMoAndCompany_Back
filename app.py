@@ -13,6 +13,11 @@ bcrypt = Bcrypt(app)
 CORS(app)
 
 
+# favorites = db.Table('favorites',
+#     db.Column('customer_id', db.Integer, db.ForeignKey('customer.id'), primary_key=True),
+#     db.Column('product_id', db.Integer, db.ForeignKey('product.id'), primary_key=True)
+# )
+
 class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String, nullable=False, unique=True)
@@ -27,11 +32,21 @@ class Customer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String, nullable=False, unique=True)
     password = db.Column(db.String, nullable=False)
-    favorites = db.relationship("Product", backref="customer", cascade="all, delete, delete-orphan")
+    favorites = db.relationship("Favorites", backref="customer", cascade="all, delete, delete-orphan")
 
     def __init__(self, email, password):
         self.email = email
         self.password = password
+
+
+class Favorites(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False)
+
+    def __init__(self, customer_id, product_id):
+        self.customer_id = customer_id
+        self.product_id = product_id
 
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -41,17 +56,17 @@ class Product(db.Model):
     description = db.Column(db.Text, nullable=False)
     price = db.Column(db.Integer, nullable=False)
     featured_image = db.Column(db.String, nullable=False)
-    favorited_by = db.Column(db.Integer, db.ForeignKey("customer.id"))
+    favorited_by = db.relationship("Favorites", backref="product", cascade="all, delete, delete-orphan")
     images = db.relationship("Image", backref="product", cascade="all, delete, delete-orphan")
 
-    def __init__(self, category, collection, name, description, price, featured_image, favorited_by):
+    def __init__(self, category, collection, name, description, price, featured_image):
         self.category = category
         self.collection = collection
         self.name = name
         self.description = description
         self.price = price
         self.featured_image = featured_image
-        self.favorited_by = favorited_by
+
 
 class Image(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -71,6 +86,13 @@ class AdminSchema(ma.Schema):
 admin_schema = AdminSchema()
 multi_admin_schema = AdminSchema(many=True)
 
+class FavoritesSchema(ma.Schema):
+    class Meta:
+        fields = ("id", "customer_id", "product_id")
+
+favorites_schema = FavoritesSchema()
+multi_favorites_schema = FavoritesSchema(many=True)
+
 class ImageSchema(ma.Schema):
     class Meta:
         fields = ("id", "image_url", "product_id")
@@ -78,21 +100,24 @@ class ImageSchema(ma.Schema):
 image_schema = ImageSchema()
 multi_image_schema = ImageSchema(many=True)
 
+
+class CustomerSchema(ma.Schema):
+    class Meta:
+        fields = ("id", "email", "password", "favorites")
+    favorites = ma.Nested(multi_favorites_schema)
+
+customer_schema = CustomerSchema()
+multi_customer_schema = CustomerSchema(many=True)
+
 class ProductSchema(ma.Schema):
     class Meta:
         fields = ("id", "category", "collection", "name", "description", "price", "featured_image", "images", "favorited_by")
     images = ma.Nested(multi_image_schema)
+    favorited_by = ma.Nested(multi_favorites_schema)
 
 product_schema = ProductSchema()
 multi_product_schema = ProductSchema(many=True)
 
-class CustomerSchema(ma.Schema):
-    class Meta:
-        fields = ("id", "email", "password")
-    favorites = ma.Nested(multi_product_schema)
-
-customer_schema = CustomerSchema()
-multi_customer_schema = CustomerSchema(many=True)
 
 
 
@@ -198,11 +223,42 @@ def add_product():
     featured_image = data.get("featured_image")
     favorited_by = data.get("favorited_by")
 
+    existing_product_check = db.session.query(Product).filter(Product.name == name).filter(Product.category == category).first()
+    if existing_product_check is not None:
+        return jsonify("Error: Product already exists")
+
     new_product = Product(category, collection, name, description, price, featured_image, favorited_by)
     db.session.add(new_product)
     db.session.commit()
 
     return jsonify(product_schema.dump(new_product))
+
+@app.route("/product/add/multi", methods=["POST"])
+def add_multi_products():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as JSON")
+
+    data = request.get_json().get("data")
+
+    new_products = []
+
+    for product in data:
+        category = product.get("category")
+        collection = product.get("collection")
+        name = product.get("name")
+        description = product.get("description")
+        price = product.get("price")
+        featured_image = product.get("featured_image")
+
+        existing_product_check = db.session.query(Product).filter(Product.name == name).filter(Product.category == category).first()
+        if existing_product_check is None:
+
+            new_product = Product(category, collection, name, description, price, featured_image)
+            db.session.add(new_product)
+            db.session.commit()
+            new_products.append(new_product)
+
+    return jsonify(multi_product_schema.dump(new_products))
 
 @app.route("/product/get", methods=["GET"])
 def get_products():
@@ -252,6 +308,30 @@ def get_all_images_by_product_id(product_id):
     images = db.session.query(Image).filter(Image.product_id == product_id).all()
     return jsonify(multi_image_schema.dump(images))
 
+
+
+@app.route("/favorite/add", methods=["POST"])
+def add_favorite():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as json")
+
+    data = request.get_json()
+    customer_id = data.get("customer_id")
+    product_id = data.get("product_id")
+
+    customer = db.session.query(Customer).filter(Customer.id == customer_id).first()
+    product = db.session.query(Product).filter(Product.id == product_id).first()
+    new_favorite = Favorites(customer_id, product_id)
+    db.session.add(new_favorite)
+    db.session.commit()
+
+    return jsonify('Successfully added')
+    # return jsonify(multi_favorites_schema.dump(new_favorite))
+
+@app.route("/favorite/get", methods=["GET"])
+def get_favorites():
+    all_favorites = db.session.query(Favorites).all()
+    return jsonify(multi_favorites_schema.dump(all_favorites))
 
 
 
