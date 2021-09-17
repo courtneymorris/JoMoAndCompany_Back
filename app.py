@@ -149,11 +149,11 @@ def admin_verification():
 
     admin = db.session.query(Admin).filter(Admin.username == username).first()
 
-    if user is None:
-        return jsonify("Account NOT Verified")
+    if admin is None:
+        return jsonify("ADMIN_NOT_LOGGED_IN")
 
     if not bcrypt.check_password_hash(admin.password, password):
-        return jsonify("Account NOT Verified")
+        return jsonify("ADMIN_NOT_LOGGED_IN")
 
     return jsonify(admin_schema.dump(admin))
 
@@ -193,7 +193,7 @@ def verification():
 
     customer = db.session.query(Customer).filter(Customer.email == email).first()
 
-    if user is None:
+    if customer is None:
         return jsonify("Account NOT Verified")
 
     if not bcrypt.check_password_hash(customer.password, password):
@@ -205,6 +205,13 @@ def verification():
 def get_all_customers():
     all_customers = db.session.query(Customer).all()
     return jsonify(multi_customer_schema.dump(all_customers))
+
+@app.route("/customer/get/<email>", methods=["GET"])
+def get_customer(email):
+    customer = db.session.query(Customer).filter(Customer.email == email).first()
+    return jsonify(customer_schema.dump(customer))
+
+
 
 
 
@@ -265,16 +272,59 @@ def get_products():
     all_products = db.session.query(Product).all()
     return jsonify(multi_product_schema.dump(all_products))
 
-@app.route("/product/get/<category>", methods=["GET"])
+@app.route("/product/get/id/<id>", methods=["GET"])
+def get_products_by_id(id):
+    products = db.session.query(Product).filter(Product.id == id).first()
+    return jsonify(product_schema.dump(products))
+
+@app.route("/product/get/category/<category>", methods=["GET"])
 def get_products_by_category(category):
-    products = db.session.query(Product).filter(Product.category == category).all()
-    return jsonify(multi_product_schema.dump(products))
+    this_category = db.session.query(Product).filter(Product.category == category).all()
+    return jsonify(multi_product_schema.dump(this_category))
 
 @app.route("/product/get/collection/<collection>", methods=["GET"])
 def get_products_by_collection(collection):
-    collections = collection.split("-")
-    products = db.session.query(Product).filter(Product.collection == collections).all()
-    return jsonify(multi_product_schema.dump(products))
+    this_collection = db.session.query(Product).filter(Product.collection == collection).all()
+    return jsonify(multi_product_schema.dump(this_collection))
+
+
+@app.route("/product/update/id/<id>", methods=["PUT"])
+def update_product(id):
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as json")
+
+    data = request.get_json()
+    category = data.get("category")
+    collection = data.get("collection")
+    name = data.get("name")
+    description = data.get("description")
+    price = data.get("price")
+    featured_image = data.get("featured_image")
+
+    product = db.session.query(Product).filter(Product.id == id).first()
+
+    if category != None:
+        product.category = category
+    if collection != None:
+        product.collection = collection
+    if name != None:
+        product.name = name
+    if description != None:
+        product.description = description
+    if price != None:
+        product.price = price
+    if featured_image != None:
+        product.featured_image = featured_image
+    db.session.commit()
+
+    return jsonify(product_schema.dump(product))
+
+@app.route("/product/delete/id/<id>", methods=["DELETE"])
+def delete_product(id):
+    product = db.session.query(Product).filter(Product.id == id).first()
+    db.session.delete(product)
+    db.session.commit()
+    return jsonify("Product successfully deleted")
 
 
 
@@ -308,30 +358,58 @@ def get_all_images_by_product_id(product_id):
     images = db.session.query(Image).filter(Image.product_id == product_id).all()
     return jsonify(multi_image_schema.dump(images))
 
+@app.route("/image/update/id/<id>", methods=["PUT"])
+def update_image(id):
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be sent as JSON")
+
+    image_url = request.get_json().get("image_url")
+
+    image = db.session.query(Image).filter(Image.id == id).first()
+
+    if image_url != None:
+        image.image_url = image_url
+
+    db.session.commit()
+
+    return jsonify(image_schema.dump(image))
+
+@app.route("/image/delete/id/<id>", methods=["DELETE"])
+def delete_image(id):
+    image = db.session.query(Image).filter(Image.id == id).first()
+    db.session.delete(image)
+    db.session.commit()
+    return jsonify("Image successfully deleted")
 
 
-@app.route("/favorite/add", methods=["POST"])
+
+@app.route("/favorites/add", methods=["POST"])
 def add_favorite():
     if request.content_type != "application/json":
-        return jsonify("Error: Data must be sent as json")
+        return jsonify("Error: Data must be sent as JSON")
 
     data = request.get_json()
-    customer_id = data.get("customer_id")
-    product_id = data.get("product_id")
+    customer_id = data.get(customer_id)
+    product_id = data.get(product_id)
 
-    customer = db.session.query(Customer).filter(Customer.id == customer_id).first()
-    product = db.session.query(Product).filter(Product.id == product_id).first()
+    # TODO: fix this query
+    favorite = db.session.query(Favorites).filter(Favorites.customer_id == customer_id).filter(Favorites.product_id == product_id)
+
     new_favorite = Favorites(customer_id, product_id)
     db.session.add(new_favorite)
     db.session.commit()
 
-    return jsonify('Successfully added')
-    # return jsonify(multi_favorites_schema.dump(new_favorite))
+    return jsonify(favorites_schema.dump(new_favorite))
 
-@app.route("/favorite/get", methods=["GET"])
+@app.route("/favorites/get", methods=["GET"])
 def get_favorites():
     all_favorites = db.session.query(Favorites).all()
     return jsonify(multi_favorites_schema.dump(all_favorites))
+
+@app.route("/favorites/get/<customer_id>", methods=["GET"])
+def get_favorites_by_customer(customer_id):
+    customer_favorites = db.session.query(Customer).filter(Customer.favorites == favorites).all()
+    return jsonify(multi_favorites_schema.dump(customer_favorites))
 
 
 
